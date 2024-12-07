@@ -1,71 +1,125 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import type { NextPage } from "next";
-import { useAccount } from "wagmi";
-import { BugAntIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import { Address } from "~~/components/scaffold-eth";
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import Voting from '../../hardhat/artifacts/contracts/YourContract.sol/Voting.json';
 
-const Home: NextPage = () => {
-  const { address: connectedAddress } = useAccount();
+const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+
+export default function HomePage() {
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [candidateName, setCandidateName] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [currentAccount, setCurrentAccount] = useState('');
+
+  // Проверка подключения к MetaMask
+  useEffect(() => {
+    if (!window.ethereum) {
+      setErrorMessage('Установите MetaMask.');
+    } else {
+      window.ethereum.request({ method: 'eth_accounts' }).then((accounts: string[]) => {
+        if (accounts.length > 0) {
+          setCurrentAccount(accounts[0]);
+          loadCandidates();
+        }
+      });
+    }
+  }, []);
+
+  // Загрузка списка кандидатов
+  async function loadCandidates() {
+    if (typeof window.ethereum !== 'undefined') {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(contractAddress, Voting.abi, signer);
+      try {
+        const candidatesCount = await contract.candidatesCount();
+        const candidatesArray = [];
+        for (let i = 1; i <= Number(candidatesCount); i++) {
+          const candidate = await contract.getCandidate(i);
+          candidatesArray.push({
+            id: Number(candidate[0]),
+            name: candidate[1],
+            voteCount: Number(candidate[2]),
+          });
+        }
+        setCandidates(candidatesArray);
+      } catch (err) {
+        console.error('Ошибка при загрузке кандидатов:', err);
+      }
+    }
+  }
+
+  // Добавление нового кандидата
+  async function addCandidate() {
+    if (!candidateName) return;
+    if (typeof window.ethereum !== 'undefined') {
+      try {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const contract = new ethers.Contract(contractAddress, Voting.abi, signer);
+        const transaction = await contract.addCandidate(candidateName);
+        await transaction.wait();
+        setCandidateName('');
+        loadCandidates();
+      } catch (err) {
+        console.error('Ошибка при добавлении кандидата:', err);
+      }
+    }
+  }
+
+  // Голосование за кандидата
+  async function vote(candidateId: number) {
+    if (typeof window.ethereum !== 'undefined') {
+      try {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const contract = new ethers.Contract(contractAddress, Voting.abi, signer);
+        const transaction = await contract.vote(candidateId);
+        await transaction.wait();
+        loadCandidates();
+      } catch (err: any) {
+        if (err.info && err.info.error && err.info.error.message) {
+          setErrorMessage(err.info.error.message);
+        } else {
+          console.error('Ошибка при голосовании:', err);
+        }
+      }
+    }
+  }
 
   return (
-    <>
-      <div className="flex items-center flex-col flex-grow pt-10">
-        <div className="px-5">
-          <h1 className="text-center">
-            <span className="block text-2xl mb-2">Welcome to</span>
-            <span className="block text-4xl font-bold">Scaffold-ETH 2</span>
-          </h1>
-          <div className="flex justify-center items-center space-x-2 flex-col sm:flex-row">
-            <p className="my-2 font-medium">Connected Address:</p>
-            <Address address={connectedAddress} />
+    <div>
+      <h1>Децентрализованное голосование</h1>
+      {currentAccount ? (
+        <>
+          <div>
+            <input
+              type="text"
+              placeholder="Имя кандидата"
+              value={candidateName}
+              onChange={(e) => setCandidateName(e.target.value)}
+            />
+            <button onClick={addCandidate}>Добавить кандидата</button>
           </div>
-          <p className="text-center text-lg">
-            Get started by editing{" "}
-            <code className="italic bg-base-300 text-base font-bold max-w-full break-words break-all inline-block">
-              packages/nextjs/app/page.tsx
-            </code>
-          </p>
-          <p className="text-center text-lg">
-            Edit your smart contract{" "}
-            <code className="italic bg-base-300 text-base font-bold max-w-full break-words break-all inline-block">
-              YourContract.sol
-            </code>{" "}
-            in{" "}
-            <code className="italic bg-base-300 text-base font-bold max-w-full break-words break-all inline-block">
-              packages/hardhat/contracts
-            </code>
-          </p>
-        </div>
-
-        <div className="flex-grow bg-base-300 w-full mt-16 px-8 py-12">
-          <div className="flex justify-center items-center gap-12 flex-col sm:flex-row">
-            <div className="flex flex-col bg-base-100 px-10 py-10 text-center items-center max-w-xs rounded-3xl">
-              <BugAntIcon className="h-8 w-8 fill-secondary" />
-              <p>
-                Tinker with your smart contract using the{" "}
-                <Link href="/debug" passHref className="link">
-                  Debug Contracts
-                </Link>{" "}
-                tab.
-              </p>
-            </div>
-            <div className="flex flex-col bg-base-100 px-10 py-10 text-center items-center max-w-xs rounded-3xl">
-              <MagnifyingGlassIcon className="h-8 w-8 fill-secondary" />
-              <p>
-                Explore your local transactions with the{" "}
-                <Link href="/blockexplorer" passHref className="link">
-                  Block Explorer
-                </Link>{" "}
-                tab.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
+          <h2>Список кандидатов</h2>
+          <ul>
+            {candidates.map((candidate) => (
+              <li key={candidate.id}>
+                <b>{candidate.name}</b> (Голоса: {candidate.voteCount})
+                <button onClick={() => vote(candidate.id)}>Голосовать</button>
+              </li>
+            ))}
+          </ul>
+          {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
+        </>
+      ) : (
+        <button onClick={() => window.ethereum.request({ method: 'eth_requestAccounts' })}>
+          Подключить кошелек
+        </button>
+      )}
+    </div>
   );
-};
-
-export default Home;
+}
